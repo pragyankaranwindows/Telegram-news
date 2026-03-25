@@ -183,7 +183,7 @@ async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = requests.get(f"https://wttr.in/{city}?format=3").text
     await update.message.reply_text(res + "\n🍃 Picka Pi")
 
-# ================= BACKGROUND LOOP =================
+# ================= BACKGROUND WORKER =================
 async def worker(app: Application):
     global last_post_date
 
@@ -213,7 +213,12 @@ async def worker(app: Application):
 
                 if path:
                     with open(path, 'rb') as video:
-                        await bot.send_video(chat_id=CHANNEL_ID, video=video, caption=format_caption(item["title"], item["source"]), timeout=120)
+                        await bot.send_video(
+                            chat_id=CHANNEL_ID,
+                            video=video,
+                            caption=format_caption(item["title"], item["source"]),
+                            timeout=120
+                        )
 
                     os.remove(path)
                 else:
@@ -224,18 +229,18 @@ async def worker(app: Application):
 
         await asyncio.sleep(300)
 
-# ================= MAIN =================
+# ================= FIXED START =================
+async def post_init(app):
+    asyncio.create_task(worker(app))
+
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("add", add))
     app.add_handler(CommandHandler("remove", remove))
     app.add_handler(CommandHandler("list", list_channels))
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("weather", weather))
-
-    # background job
-    app.create_task(worker(app))
 
     print("🚀 Bot running...")
 
