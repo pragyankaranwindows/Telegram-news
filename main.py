@@ -143,7 +143,9 @@ def download_video(url):
     except Exception as e:
         print("❌ Download error:", e)
         return None
-
+if "Requested format is not available" in str(e):
+    print("⏭ Skipping unsupported video")
+    return None
 # ================= QUEUE =================
 def add_to_queue(item):
     queue = load_json(QUEUE_FILE)
