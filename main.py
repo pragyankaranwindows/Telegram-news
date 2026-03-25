@@ -222,7 +222,10 @@ async def worker(app: Application):
 
                     os.remove(path)
                 else:
-                    print("⏭ Skipped blocked video")
+                    print("🔁 Video Blocked, Will retry later")
+
+# push back to queue for retry
+add_to_queue(item)
 
         except Exception as e:
             print("🔥 ERROR:", e)
