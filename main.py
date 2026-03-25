@@ -6,7 +6,7 @@ import json
 import re
 import requests
 from datetime import datetime
-from telegram import Bot, Update
+from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 
@@ -68,7 +68,7 @@ def get_all_latest_videos():
         try:
             feed = feedparser.parse(feed_url)
 
-            for entry in feed.entries[:1]:
+            for entry in feed.entries[:2]:
                 link = entry.link
 
                 if "live" in link.lower():
@@ -90,8 +90,6 @@ def get_all_latest_videos():
         except Exception as e:
             print("⚠️ Feed error:", e)
 
-    import random
-    random.shuffle(videos)
     return videos
 
 # ================= DOWNLOAD =================
@@ -102,9 +100,7 @@ def download_video(url):
             'outtmpl': 'video.%(ext)s',
             'quiet': True,
             'noplaylist': True,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0'
-            },
+            'http_headers': {'User-Agent': 'Mozilla/5.0'},
             'extractor_args': {
                 'youtube': {
                     'player_client': ['android', 'web']
@@ -138,26 +134,7 @@ def get_next_from_queue():
         return item
     return None
 
-# ================= SEND =================
-async def send_video(file_path, caption, bot):
-    try:
-        with open(file_path, 'rb') as video:
-            await bot.send_video(
-                chat_id=CHANNEL_ID,
-                video=video,
-                caption=caption,
-                timeout=120
-            )
-        print("✅ Sent")
-    except Exception as e:
-        print("❌ Send error:", e)
-
 # ================= COMMANDS =================
-async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    city = " ".join(context.args)
-    res = requests.get(f"https://wttr.in/{city}?format=3").text
-    await update.message.reply_text(res + "\n🍃 Picka Pi")
-
 async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     links = re.split(r"[,\s]+", " ".join(context.args))
     channels = load_channels()
@@ -201,8 +178,13 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Channels: {len(load_channels())}\nQueue: {len(load_json(QUEUE_FILE))}\n🍃 Picka Pi"
     )
 
-# ================= BACKGROUND TASK =================
-async def background_loop(app):
+async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    city = " ".join(context.args)
+    res = requests.get(f"https://wttr.in/{city}?format=3").text
+    await update.message.reply_text(res + "\n🍃 Picka Pi")
+
+# ================= BACKGROUND LOOP =================
+async def worker(app: Application):
     global last_post_date
 
     bot = app.bot
@@ -230,10 +212,10 @@ async def background_loop(app):
                 path = download_video(item["url"])
 
                 if path:
-                    await send_video(path, format_caption(item["title"], item["source"]), bot)
+                    with open(path, 'rb') as video:
+                        await bot.send_video(chat_id=CHANNEL_ID, video=video, caption=format_caption(item["title"], item["source"]), timeout=120)
 
-                    if os.path.exists(path):
-                        os.remove(path)
+                    os.remove(path)
                 else:
                     print("⏭ Skipped blocked video")
 
@@ -242,22 +224,22 @@ async def background_loop(app):
 
         await asyncio.sleep(300)
 
-# ================= RUN =================
-async def main():
+# ================= MAIN =================
+def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("weather", weather))
     app.add_handler(CommandHandler("add", add))
     app.add_handler(CommandHandler("remove", remove))
     app.add_handler(CommandHandler("list", list_channels))
     app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("weather", weather))
+
+    # background job
+    app.create_task(worker(app))
 
     print("🚀 Bot running...")
 
-    # start background task
-    asyncio.create_task(background_loop(app))
-
-    await app.run_polling()
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
