@@ -97,7 +97,7 @@ def get_all_latest_videos():
     random.shuffle(videos)
     return videos
 
-# ================= DOWNLOAD =================
+# ================= DOWNLOAD (STRONG VERSION) =================
 def download_video(url):
     try:
         ydl_opts = {
@@ -105,14 +105,19 @@ def download_video(url):
             'outtmpl': 'video.%(ext)s',
             'quiet': True,
             'noplaylist': True,
+
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
             },
+
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android']
+                    'player_client': ['android', 'web']
                 }
-            }
+            },
+
+            'sleep_interval': 2,
+            'max_sleep_interval': 5
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -204,8 +209,13 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Channels: {len(load_channels())}\nQueue: {len(load_json(QUEUE_FILE))}\n🍃 Picka Pi"
     )
 
-# ================= TELEGRAM BOT =================
+# ================= TELEGRAM BOT (FIXED THREAD LOOP) =================
 def run_bot():
+    import asyncio
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("weather", weather))
@@ -251,6 +261,8 @@ async def main_loop():
 
                     if os.path.exists(path):
                         os.remove(path)
+                else:
+                    print("⏭ Skipped blocked video")
 
         except Exception as e:
             print("🔥 ERROR:", e)
