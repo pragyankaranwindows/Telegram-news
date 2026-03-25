@@ -183,7 +183,7 @@ async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = requests.get(f"https://wttr.in/{city}?format=3").text
     await update.message.reply_text(res + "\n🍃 Picka Pi")
 
-# ================= BACKGROUND WORKER =================
+# ================= WORKER =================
 async def worker(app: Application):
     global last_post_date
 
@@ -202,6 +202,7 @@ async def worker(app: Application):
 
             for v in videos:
                 if v["url"] not in posted:
+                    v["retry"] = 0
                     add_to_queue(v)
                     posted.add(v["url"])
                     save_json(POSTED_FILE, list(posted))
@@ -221,18 +222,24 @@ async def worker(app: Application):
                         )
 
                     os.remove(path)
-                else:
-                    print("🔁 Video Blocked, Will retry later")
 
-# push back to queue for retry
-add_to_queue(item)
+                else:
+                    # 🔁 retry system (max 2 retries)
+                    retry_count = item.get("retry", 0)
+
+                    if retry_count < 2:
+                        item["retry"] = retry_count + 1
+                        print(f"🔁 Retry {item['retry']} for video")
+                        add_to_queue(item)
+                    else:
+                        print("❌ Skipped permanently")
 
         except Exception as e:
             print("🔥 ERROR:", e)
 
         await asyncio.sleep(300)
 
-# ================= FIXED START =================
+# ================= START =================
 async def post_init(app):
     asyncio.create_task(worker(app))
 
