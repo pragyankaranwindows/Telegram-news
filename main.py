@@ -5,7 +5,6 @@ import asyncio
 import json
 import re
 import requests
-import threading
 from datetime import datetime
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -23,7 +22,6 @@ QUEUE_FILE = "queue.json"
 POSTED_FILE = "posted.json"
 CHANNELS_FILE = "channels.json"
 
-# ================= DAILY TRACK =================
 last_post_date = None
 
 # ================= STORAGE =================
@@ -40,14 +38,13 @@ def save_json(file, data):
     with open(file, "w") as f:
         json.dump(data, f)
 
-# ================= CHANNEL STORAGE =================
 def load_channels():
     return load_json(CHANNELS_FILE)
 
 def save_channels(channels):
     save_json(CHANNELS_FILE, channels)
 
-# ================= CAPTION CLEANER =================
+# ================= CLEAN =================
 def clean_caption(text):
     if not text:
         return ""
@@ -56,15 +53,13 @@ def clean_caption(text):
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
-# ================= FORMAT =================
 def format_caption(title, source):
-    clean = clean_caption(title)
-    return f"""🔥 {clean}
+    return f"""🔥 {clean_caption(title)}
 
 📺 {source}
 🍃 Picka Pi"""
 
-# ================= FETCH YT =================
+# ================= FETCH =================
 def get_all_latest_videos():
     channels = load_channels()
     videos = []
@@ -78,29 +73,27 @@ def get_all_latest_videos():
             for entry in feed.entries[:1]:
                 link = entry.link
 
-                # Skip live videos
                 if "live" in link.lower():
                     continue
 
                 if "watch?v=" in link:
-                    video_id = link.split("watch?v=")[-1]
-                    shorts_url = f"https://www.youtube.com/shorts/{video_id}"
+                    vid = link.split("watch?v=")[-1]
+                    url = f"https://www.youtube.com/shorts/{vid}"
                 else:
-                    shorts_url = link
+                    url = link
 
-                if "shorts" in shorts_url:
+                if "shorts" in url:
                     videos.append({
-                        "url": shorts_url,
+                        "url": url,
                         "title": entry.title,
                         "source": feed.feed.title if "title" in feed.feed else "YouTube"
                     })
 
         except Exception as e:
-            print(f"⚠️ Channel error: {channel_id} → {e}")
+            print("⚠️ Feed error:", e)
 
     import random
     random.shuffle(videos)
-
     return videos
 
 # ================= DOWNLOAD =================
@@ -109,11 +102,23 @@ def download_video(url):
         ydl_opts = {
             'format': 'best[height<=720][filesize<50M]',
             'outtmpl': 'video.%(ext)s',
-            'quiet': True
+            'quiet': True,
+            'noplaylist': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0'
+            },
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android']
+                }
+            }
         }
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
+
         return "video.mp4"
+
     except Exception as e:
         print("❌ Download error:", e)
         return None
@@ -125,7 +130,7 @@ def add_to_queue(item):
     if item["url"] not in [q["url"] for q in queue]:
         queue.append(item)
         save_json(QUEUE_FILE, queue)
-        print("📥 Added to queue")
+        print("📥 Added")
 
 def get_next_from_queue():
     queue = load_json(QUEUE_FILE)
@@ -146,105 +151,60 @@ async def send_video(file_path, caption):
                 timeout=120
             )
         print("✅ Sent")
-        return True
     except Exception as e:
         print("❌ Send error:", e)
-        return False
 
 # ================= COMMANDS =================
-
 async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if not context.args:
-            await update.message.reply_text("❌ Use: /weather city")
-            return
-
-        city = " ".join(context.args)
-        res = requests.get(f"https://wttr.in/{city}?format=3").text
-        await update.message.reply_text(f"{res}\n🍃 Picka Pi")
-
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
+    city = " ".join(context.args)
+    res = requests.get(f"https://wttr.in/{city}?format=3").text
+    await update.message.reply_text(res + "\n🍃 Picka Pi")
 
 async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if not context.args:
-            await update.message.reply_text("❌ Use: /add <links>")
-            return
+    links = re.split(r"[,\s]+", " ".join(context.args))
+    channels = load_channels()
+    added = []
 
-        input_text = " ".join(context.args)
-        links = re.split(r"[,\s]+", input_text)
+    for link in links:
+        try:
+            html = requests.get(link).text
+            match = re.search(r'"channelId":"(UC[\w-]+)"', html)
+            if match:
+                cid = match.group(1)
+                if cid not in channels:
+                    channels.append(cid)
+                    added.append(cid)
+        except:
+            continue
 
-        channels = load_channels()
-        added = []
-
-        for link in links:
-            try:
-                html = requests.get(link).text
-                match = re.search(r'"channelId":"(UC[\w-]+)"', html)
-
-                if match:
-                    channel_id = match.group(1)
-                    if channel_id not in channels:
-                        channels.append(channel_id)
-                        added.append(channel_id)
-            except:
-                continue
-
-        save_channels(channels)
-
-        await update.message.reply_text("✅ Added:\n" + "\n".join(added) if added else "Nothing added")
-
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
+    save_channels(channels)
+    await update.message.reply_text("✅ Added:\n" + "\n".join(added) if added else "Nothing added")
 
 async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channels = load_channels()
 
-    if not channels:
-        await update.message.reply_text("📭 No channels")
+    if context.args:
+        idx = int(context.args[0]) - 1
+        removed = channels.pop(idx)
+        save_channels(channels)
+        await update.message.reply_text(f"Removed:\n{removed}")
         return
 
-    if context.args:
-        try:
-            index = int(context.args[0]) - 1
-            removed = channels.pop(index)
-            save_channels(channels)
-            await update.message.reply_text(f"✅ Removed:\n{removed}")
-            return
-        except:
-            await update.message.reply_text("❌ Use: /remove 1")
-            return
-
-    msg = "🗑 Select:\n\n"
-    for i, ch in enumerate(channels, start=1):
-        msg += f"{i}. {ch}\n"
-
+    msg = "\n".join([f"{i+1}. {c}" for i, c in enumerate(channels)])
     await update.message.reply_text(msg)
 
 async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channels = load_channels()
-
-    if not channels:
-        await update.message.reply_text("📭 No channels")
-        return
-
-    msg = "📺 Channels:\n\n"
-    for i, ch in enumerate(channels, start=1):
-        msg += f"{i}. {ch}\n"
-
-    await update.message.reply_text(msg)
+    msg = "\n".join([f"{i+1}. {c}" for i, c in enumerate(channels)])
+    await update.message.reply_text(msg or "No channels")
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channels = load_channels()
-    queue = load_json(QUEUE_FILE)
+    await update.message.reply_text(f"Channels: {len(load_channels())}\nQueue: {len(load_json(QUEUE_FILE))}")
 
-    await update.message.reply_text(
-        f"📊 Status\n\nChannels: {len(channels)}\nQueue: {len(queue)}\n🍃 Picka Pi"
-    )
+# ================= MAIN =================
+async def main():
+    global last_post_date
 
-# ================= TELEGRAM BOT =================
-def run_bot():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("weather", weather))
@@ -253,14 +213,9 @@ def run_bot():
     app.add_handler(CommandHandler("list", list_channels))
     app.add_handler(CommandHandler("status", status))
 
-    print("🤖 Command bot running...")
-    app.run_polling()
+    print("🚀 Bot running...")
 
-# ================= MAIN LOOP =================
-async def main():
-    global last_post_date
-
-    print("🚀 YT Bot Running...")
+    asyncio.create_task(app.run_polling())
 
     posted = set(load_json(POSTED_FILE))
 
@@ -274,23 +229,20 @@ async def main():
 
             videos = get_all_latest_videos()
 
-            for item in videos:
-                if item["url"] not in posted:
-                    add_to_queue(item)
-                    posted.add(item["url"])
+            for v in videos:
+                if v["url"] not in posted:
+                    add_to_queue(v)
+                    posted.add(v["url"])
                     save_json(POSTED_FILE, list(posted))
 
             item = get_next_from_queue()
 
             if item:
-                file_path = download_video(item["url"])
-
-                if file_path:
-                    await send_video(file_path, format_caption(item["title"], item["source"]))
-                    await asyncio.sleep(2)
-
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
+                path = download_video(item["url"])
+                if path:
+                    await send_video(path, format_caption(item["title"], item["source"]))
+                    if os.path.exists(path):
+                        os.remove(path)
 
         except Exception as e:
             print("🔥 ERROR:", e)
@@ -299,5 +251,4 @@ async def main():
 
 # ================= RUN =================
 if __name__ == "__main__":
-    threading.Thread(target=run_bot).start()
     asyncio.run(main())
