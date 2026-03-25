@@ -5,7 +5,6 @@ import asyncio
 import json
 import re
 import requests
-import threading
 from datetime import datetime
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -16,8 +15,6 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
-
-bot = Bot(token=BOT_TOKEN)
 
 QUEUE_FILE = "queue.json"
 POSTED_FILE = "posted.json"
@@ -97,7 +94,7 @@ def get_all_latest_videos():
     random.shuffle(videos)
     return videos
 
-# ================= DOWNLOAD (STRONG VERSION) =================
+# ================= DOWNLOAD =================
 def download_video(url):
     try:
         ydl_opts = {
@@ -105,19 +102,14 @@ def download_video(url):
             'outtmpl': 'video.%(ext)s',
             'quiet': True,
             'noplaylist': True,
-
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                'User-Agent': 'Mozilla/5.0'
             },
-
             'extractor_args': {
                 'youtube': {
                     'player_client': ['android', 'web']
                 }
-            },
-
-            'sleep_interval': 2,
-            'max_sleep_interval': 5
+            }
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -147,7 +139,7 @@ def get_next_from_queue():
     return None
 
 # ================= SEND =================
-async def send_video(file_path, caption):
+async def send_video(file_path, caption, bot):
     try:
         with open(file_path, 'rb') as video:
             await bot.send_video(
@@ -209,30 +201,11 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Channels: {len(load_channels())}\nQueue: {len(load_json(QUEUE_FILE))}\n🍃 Picka Pi"
     )
 
-# ================= TELEGRAM BOT (FIXED THREAD LOOP) =================
-def run_bot():
-    import asyncio
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("weather", weather))
-    app.add_handler(CommandHandler("add", add))
-    app.add_handler(CommandHandler("remove", remove))
-    app.add_handler(CommandHandler("list", list_channels))
-    app.add_handler(CommandHandler("status", status))
-
-    print("🤖 Command bot running...")
-    app.run_polling()
-
-# ================= MAIN LOOP =================
-async def main_loop():
+# ================= BACKGROUND TASK =================
+async def background_loop(app):
     global last_post_date
 
-    print("🚀 YT Bot Running...")
-
+    bot = app.bot
     posted = set(load_json(POSTED_FILE))
 
     while True:
@@ -257,7 +230,7 @@ async def main_loop():
                 path = download_video(item["url"])
 
                 if path:
-                    await send_video(path, format_caption(item["title"], item["source"]))
+                    await send_video(path, format_caption(item["title"], item["source"]), bot)
 
                     if os.path.exists(path):
                         os.remove(path)
@@ -270,6 +243,21 @@ async def main_loop():
         await asyncio.sleep(300)
 
 # ================= RUN =================
+async def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("weather", weather))
+    app.add_handler(CommandHandler("add", add))
+    app.add_handler(CommandHandler("remove", remove))
+    app.add_handler(CommandHandler("list", list_channels))
+    app.add_handler(CommandHandler("status", status))
+
+    print("🚀 Bot running...")
+
+    # start background task
+    asyncio.create_task(background_loop(app))
+
+    await app.run_polling()
+
 if __name__ == "__main__":
-    threading.Thread(target=run_bot).start()
-    asyncio.run(main_loop())
+    asyncio.run(main())
