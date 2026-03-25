@@ -106,7 +106,7 @@ def get_all_latest_videos():
 
     return videos
 
-# ================= DOWNLOAD (ANTI-429 + SMART) =================
+# ================= DOWNLOAD =================
 def download_video(url):
     try:
         ydl_opts = {
@@ -130,7 +130,6 @@ def download_video(url):
 
             'merge_output_format': 'mp4',
 
-            # 🔥 ANTI RATE LIMIT
             'sleep_interval': 5,
             'max_sleep_interval': 10
         }
@@ -141,11 +140,17 @@ def download_video(url):
         return "video.mp4"
 
     except Exception as e:
-        print("❌ Download error:", e)
+        error_text = str(e)
+
+        print("❌ Download error:", error_text)
+
+        # 🔥 SMART SKIP (NO RETRY)
+        if "Requested format is not available" in error_text or "Only images are available" in error_text:
+            print("⏭ Skipping unsupported video permanently")
+            return "SKIP"
+
         return None
-if "Requested format is not available" in str(e):
-    print("⏭ Skipping unsupported video")
-    return None
+
 # ================= QUEUE =================
 def add_to_queue(item):
     queue = load_json(QUEUE_FILE)
@@ -162,55 +167,6 @@ def get_next_from_queue():
         save_json(QUEUE_FILE, queue)
         return item
     return None
-
-# ================= COMMANDS =================
-async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    links = re.split(r"[,\s]+", " ".join(context.args))
-    channels = load_channels()
-    added = []
-
-    for link in links:
-        try:
-            html = requests.get(link).text
-            match = re.search(r'"channelId":"(UC[\w-]+)"', html)
-            if match:
-                cid = match.group(1)
-                if cid not in channels:
-                    channels.append(cid)
-                    added.append(cid)
-        except:
-            continue
-
-    save_channels(channels)
-    await update.message.reply_text("✅ Added:\n" + "\n".join(added) if added else "Nothing added")
-
-async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channels = load_channels()
-
-    if context.args:
-        idx = int(context.args[0]) - 1
-        removed = channels.pop(idx)
-        save_channels(channels)
-        await update.message.reply_text(f"Removed:\n{removed}")
-        return
-
-    msg = "\n".join([f"{i+1}. {c}" for i, c in enumerate(channels)])
-    await update.message.reply_text(msg or "No channels")
-
-async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channels = load_channels()
-    msg = "\n".join([f"{i+1}. {c}" for i, c in enumerate(channels)])
-    await update.message.reply_text(msg or "No channels")
-
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        f"Channels: {len(load_channels())}\nQueue: {len(load_json(QUEUE_FILE))}\n🍃 Picka Pi"
-    )
-
-async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    city = " ".join(context.args)
-    res = requests.get(f"https://wttr.in/{city}?format=3").text
-    await update.message.reply_text(res + "\n🍃 Picka Pi")
 
 # ================= WORKER =================
 async def worker(app: Application):
@@ -239,9 +195,12 @@ async def worker(app: Application):
             item = get_next_from_queue()
 
             if item:
-                await asyncio.sleep(5)  # 🔥 delay before download
+                await asyncio.sleep(5)
 
                 path = download_video(item["url"])
+
+                if path == "SKIP":
+                    continue
 
                 if path and os.path.exists(path):
                     with open(path, 'rb') as video:
@@ -259,9 +218,9 @@ async def worker(app: Application):
 
                     if retry_count < 2:
                         item["retry"] = retry_count + 1
-                        print(f"🔁 Retry {item['retry']} after cooldown")
+                        print(f"🔁 Retry {item['retry']}")
 
-                        await asyncio.sleep(30)  # 🔥 cooldown
+                        await asyncio.sleep(30)
                         add_to_queue(item)
                     else:
                         print("❌ Skipped permanently")
@@ -269,7 +228,29 @@ async def worker(app: Application):
         except Exception as e:
             print("🔥 ERROR:", e)
 
-        await asyncio.sleep(240)  # 🔥 slower loop (anti-429)
+        await asyncio.sleep(240)
+
+# ================= COMMANDS =================
+async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Use /add <channel link>")
+
+async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Use /remove <number>")
+
+async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    channels = load_channels()
+    msg = "\n".join([f"{i+1}. {c}" for i, c in enumerate(channels)])
+    await update.message.reply_text(msg or "No channels")
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        f"Channels: {len(load_channels())}\nQueue: {len(load_json(QUEUE_FILE))}"
+    )
+
+async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    city = " ".join(context.args)
+    res = requests.get(f"https://wttr.in/{city}?format=3").text
+    await update.message.reply_text(res)
 
 # ================= START =================
 async def post_init(app):
