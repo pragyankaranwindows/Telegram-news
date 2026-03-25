@@ -83,7 +83,6 @@ def get_all_latest_videos():
             for entry in feed.entries[:2]:
                 link = entry.link
 
-                # skip risky
                 if any(x in link.lower() for x in ["live", "stream", "post"]):
                     continue
 
@@ -93,7 +92,6 @@ def get_all_latest_videos():
                 else:
                     url = link
 
-                # only shorts
                 if "shorts" not in url:
                     continue
 
@@ -108,13 +106,11 @@ def get_all_latest_videos():
 
     return videos
 
-# ================= DOWNLOAD (SMART FIX) =================
+# ================= DOWNLOAD (ANTI-429 + SMART) =================
 def download_video(url):
     try:
         ydl_opts = {
-            # 🔥 fallback format system
             'format': 'bestvideo+bestaudio/best',
-
             'outtmpl': 'video.%(ext)s',
             'quiet': True,
             'noplaylist': True,
@@ -132,9 +128,11 @@ def download_video(url):
                 }
             },
 
-            # 🔥 important
             'merge_output_format': 'mp4',
-            'ignoreerrors': True
+
+            # 🔥 ANTI RATE LIMIT
+            'sleep_interval': 5,
+            'max_sleep_interval': 10
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -239,6 +237,8 @@ async def worker(app: Application):
             item = get_next_from_queue()
 
             if item:
+                await asyncio.sleep(5)  # 🔥 delay before download
+
                 path = download_video(item["url"])
 
                 if path and os.path.exists(path):
@@ -257,9 +257,9 @@ async def worker(app: Application):
 
                     if retry_count < 2:
                         item["retry"] = retry_count + 1
-                        print(f"🔁 Retry {item['retry']}")
+                        print(f"🔁 Retry {item['retry']} after cooldown")
 
-                        await asyncio.sleep(10)
+                        await asyncio.sleep(30)  # 🔥 cooldown
                         add_to_queue(item)
                     else:
                         print("❌ Skipped permanently")
@@ -267,7 +267,7 @@ async def worker(app: Application):
         except Exception as e:
             print("🔥 ERROR:", e)
 
-        await asyncio.sleep(180)
+        await asyncio.sleep(240)  # 🔥 slower loop (anti-429)
 
 # ================= START =================
 async def post_init(app):
