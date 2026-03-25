@@ -22,6 +22,18 @@ CHANNELS_FILE = "channels.json"
 
 last_post_date = None
 
+# ================= 🔐 COOKIE SETUP =================
+def setup_cookies():
+    data = os.getenv("COOKIE_DATA")
+    if data:
+        with open("cookies.txt", "w") as f:
+            f.write(data)
+        print("✅ Cookies loaded from ENV")
+    else:
+        print("⚠️ No cookies found")
+
+setup_cookies()
+
 # ================= STORAGE =================
 def load_json(file):
     try:
@@ -92,7 +104,7 @@ def get_all_latest_videos():
 
     return videos
 
-# ================= DOWNLOAD (COOKIE ENABLED) =================
+# ================= DOWNLOAD =================
 def download_video(url):
     try:
         ydl_opts = {
@@ -101,16 +113,14 @@ def download_video(url):
             'quiet': True,
             'noplaylist': True,
 
-            # 🔐 COOKIES
+            # 🔐 cookies
             'cookiefile': 'cookies.txt',
 
-            # stable headers
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0',
                 'Accept-Language': 'en-US,en;q=0.9'
             },
 
-            # safer client
             'extractor_args': {
                 'youtube': {
                     'player_client': ['web']
