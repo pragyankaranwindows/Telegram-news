@@ -5,6 +5,7 @@ import asyncio
 import json
 import re
 import requests
+import threading
 from datetime import datetime
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -191,7 +192,7 @@ async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     msg = "\n".join([f"{i+1}. {c}" for i, c in enumerate(channels)])
-    await update.message.reply_text(msg)
+    await update.message.reply_text(msg or "No channels")
 
 async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channels = load_channels()
@@ -199,12 +200,12 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg or "No channels")
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"Channels: {len(load_channels())}\nQueue: {len(load_json(QUEUE_FILE))}")
+    await update.message.reply_text(
+        f"Channels: {len(load_channels())}\nQueue: {len(load_json(QUEUE_FILE))}\n🍃 Picka Pi"
+    )
 
-# ================= MAIN =================
-async def main():
-    global last_post_date
-
+# ================= TELEGRAM BOT =================
+def run_bot():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("weather", weather))
@@ -213,9 +214,14 @@ async def main():
     app.add_handler(CommandHandler("list", list_channels))
     app.add_handler(CommandHandler("status", status))
 
-    print("🚀 Bot running...")
+    print("🤖 Command bot running...")
+    app.run_polling()
 
-    asyncio.create_task(app.run_polling())
+# ================= MAIN LOOP =================
+async def main_loop():
+    global last_post_date
+
+    print("🚀 YT Bot Running...")
 
     posted = set(load_json(POSTED_FILE))
 
@@ -239,8 +245,10 @@ async def main():
 
             if item:
                 path = download_video(item["url"])
+
                 if path:
                     await send_video(path, format_caption(item["title"], item["source"]))
+
                     if os.path.exists(path):
                         os.remove(path)
 
@@ -251,4 +259,5 @@ async def main():
 
 # ================= RUN =================
 if __name__ == "__main__":
-    asyncio.run(main())
+    threading.Thread(target=run_bot).start()
+    asyncio.run(main_loop())
