@@ -83,7 +83,8 @@ def get_all_latest_videos():
             for entry in feed.entries[:2]:
                 link = entry.link
 
-                if any(x in link.lower() for x in ["live", "stream"]):
+                # skip risky
+                if any(x in link.lower() for x in ["live", "stream", "post"]):
                     continue
 
                 if "watch?v=" in link:
@@ -92,28 +93,32 @@ def get_all_latest_videos():
                 else:
                     url = link
 
-                if "shorts" in url:
-                    videos.append({
-                        "url": url,
-                        "title": entry.title,
-                        "source": feed.feed.title if "title" in feed.feed else "YouTube"
-                    })
+                # only shorts
+                if "shorts" not in url:
+                    continue
+
+                videos.append({
+                    "url": url,
+                    "title": entry.title,
+                    "source": feed.feed.title if "title" in feed.feed else "YouTube"
+                })
 
         except Exception as e:
             print("⚠️ Feed error:", e)
 
     return videos
 
-# ================= DOWNLOAD =================
+# ================= DOWNLOAD (SMART FIX) =================
 def download_video(url):
     try:
         ydl_opts = {
-            'format': 'best[height<=720][filesize<50M]',
+            # 🔥 fallback format system
+            'format': 'bestvideo+bestaudio/best',
+
             'outtmpl': 'video.%(ext)s',
             'quiet': True,
             'noplaylist': True,
 
-            # 🔐 cookies
             'cookiefile': 'cookies.txt',
 
             'http_headers': {
@@ -125,7 +130,11 @@ def download_video(url):
                 'youtube': {
                     'player_client': ['web']
                 }
-            }
+            },
+
+            # 🔥 important
+            'merge_output_format': 'mp4',
+            'ignoreerrors': True
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -232,7 +241,7 @@ async def worker(app: Application):
             if item:
                 path = download_video(item["url"])
 
-                if path:
+                if path and os.path.exists(path):
                     with open(path, 'rb') as video:
                         await bot.send_video(
                             chat_id=CHANNEL_ID,
@@ -248,7 +257,7 @@ async def worker(app: Application):
 
                     if retry_count < 2:
                         item["retry"] = retry_count + 1
-                        print(f"🔁 Retry {item['retry']} after delay")
+                        print(f"🔁 Retry {item['retry']}")
 
                         await asyncio.sleep(10)
                         add_to_queue(item)
