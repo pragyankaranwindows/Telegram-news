@@ -71,7 +71,8 @@ def get_all_latest_videos():
             for entry in feed.entries[:2]:
                 link = entry.link
 
-                if "live" in link.lower():
+                # skip risky content
+                if any(x in link.lower() for x in ["live", "stream"]):
                     continue
 
                 if "watch?v=" in link:
@@ -100,12 +101,23 @@ def download_video(url):
             'outtmpl': 'video.%(ext)s',
             'quiet': True,
             'noplaylist': True,
-            'http_headers': {'User-Agent': 'Mozilla/5.0'},
+
+            # 🔥 Strong headers
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Accept-Language': 'en-US,en;q=0.9'
+            },
+
+            # 🔥 Multi-client spoof
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android', 'web']
+                    'player_client': ['android', 'web', 'tv_embedded']
                 }
-            }
+            },
+
+            # 🔥 Slow down
+            'sleep_interval': 2,
+            'max_sleep_interval': 5
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -224,12 +236,13 @@ async def worker(app: Application):
                     os.remove(path)
 
                 else:
-                    # 🔁 retry system (max 2 retries)
                     retry_count = item.get("retry", 0)
 
                     if retry_count < 2:
                         item["retry"] = retry_count + 1
-                        print(f"🔁 Retry {item['retry']} for video")
+                        print(f"🔁 Retry {item['retry']} after delay")
+
+                        await asyncio.sleep(10)  # delay before retry
                         add_to_queue(item)
                     else:
                         print("❌ Skipped permanently")
@@ -237,7 +250,7 @@ async def worker(app: Application):
         except Exception as e:
             print("🔥 ERROR:", e)
 
-        await asyncio.sleep(300)
+        await asyncio.sleep(180)  # 🔥 optimized interval
 
 # ================= START =================
 async def post_init(app):
