@@ -5,6 +5,8 @@ import asyncio
 import json
 import re
 import requests
+import random
+import time
 from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -28,7 +30,7 @@ def setup_cookies():
     if data:
         with open("cookies.txt", "w") as f:
             f.write(data)
-        print("✅ Cookies loaded from ENV")
+        print("✅ Cookies loaded")
     else:
         print("⚠️ No cookies found")
 
@@ -51,15 +53,12 @@ def save_json(file, data):
 def load_channels():
     return load_json(CHANNELS_FILE)
 
-def save_channels(channels):
-    save_json(CHANNELS_FILE, channels)
-
 # ================= CLEAN =================
 def clean_caption(text):
     if not text:
         return ""
     text = re.sub(r"#\w+", "", text)
-    text = re.sub(r"@\w+", "", text)
+    text = re.sub(r"http\S+", "", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
@@ -106,50 +105,61 @@ def get_all_latest_videos():
 
     return videos
 
-# ================= DOWNLOAD =================
+# ================= DOWNLOAD (🔥 FULL FIX) =================
 def download_video(url):
-    try:
-        ydl_opts = {
-            'format': 'bestvideo+bestaudio/best',
-            'outtmpl': 'video.%(ext)s',
-            'quiet': True,
-            'noplaylist': True,
+    formats = [
+        'bv*+ba/b',
+        'best',
+        'mp4'
+    ]
 
-            'cookiefile': 'cookies.txt',
+    for fmt in formats:
+        try:
+            time.sleep(random.randint(5, 15))  # anti rate limit
 
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0',
-                'Accept-Language': 'en-US,en;q=0.9'
-            },
+            ydl_opts = {
+                'format': fmt,
+                'outtmpl': 'video.%(ext)s',
 
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['web']
-                }
-            },
+                'quiet': True,
+                'noplaylist': True,
 
-            'merge_output_format': 'mp4',
+                'cookiefile': 'cookies.txt',
 
-            'sleep_interval': 5,
-            'max_sleep_interval': 10
-        }
+                # 🔥 IMPORTANT FIX
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'web']
+                    }
+                },
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                },
 
-        return "video.mp4"
+                'merge_output_format': 'mp4'
+            }
 
-    except Exception as e:
-        error_text = str(e)
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                file_path = ydl.prepare_filename(info)
 
-        print("❌ Download error:", error_text)
+            print(f"✅ Download success with {fmt}")
+            return file_path
 
-        # 🔥 SMART SKIP (NO RETRY)
-        if "Requested format is not available" in error_text or "Only images are available" in error_text:
-            print("⏭ Skipping unsupported video permanently")
-            return "SKIP"
+        except Exception as e:
+            error_text = str(e)
+            print(f"❌ Format {fmt} failed:", error_text)
 
-        return None
+            # 🔥 HANDLE IMAGE POSTS
+            if "Only images are available" in error_text:
+                print("📸 Image-only content → skip video")
+                return "SKIP"
+
+            continue
+
+    print("⏭ All formats failed → skip")
+    return None
 
 # ================= QUEUE =================
 def add_to_queue(item):
@@ -195,7 +205,7 @@ async def worker(app: Application):
             item = get_next_from_queue()
 
             if item:
-                await asyncio.sleep(5)
+                await asyncio.sleep(random.randint(5, 10))
 
                 path = download_video(item["url"])
 
