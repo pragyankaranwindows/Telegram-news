@@ -70,6 +70,7 @@ def get_all_latest_videos():
             for entry in feed.entries[:2]:
                 link = entry.link
 
+                # skip live videos
                 if any(x in link.lower() for x in ["live", "stream", "premiere"]):
                     continue
 
@@ -93,27 +94,24 @@ def get_all_latest_videos():
 
     return videos
 
-# ================= DOWNLOAD (🔥 FINAL ANDROID FIX) =================
+# ================= DOWNLOAD =================
 def download_video(url):
     try:
         time.sleep(random.randint(15, 40))
 
         ydl_opts = {
             'format': 'best',
-
             'outtmpl': 'video.%(ext)s',
-
             'quiet': True,
             'noplaylist': True,
 
-            # ✅ ANDROID ONLY (NO COOKIES)
+            # ANDROID CLIENT (bypass YouTube protection)
             'extractor_args': {
                 'youtube': {
                     'player_client': ['android']
                 }
             },
 
-            # 🔥 MOBILE USER AGENT
             'http_headers': {
                 'User-Agent': 'com.google.android.youtube'
             },
@@ -200,8 +198,7 @@ async def worker(app: Application):
                         await bot.send_video(
                             chat_id=CHANNEL_ID,
                             video=video,
-                            caption=format_caption(item["title"], item["source"]),
-                            timeout=120
+                            caption=format_caption(item["title"], item["source"])
                         )
 
                     os.remove(path)
