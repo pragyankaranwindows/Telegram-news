@@ -24,18 +24,6 @@ CHANNELS_FILE = "channels.json"
 
 last_post_date = None
 
-# ================= 🍪 COOKIE SETUP =================
-def setup_cookies():
-    data = os.getenv("COOKIE_DATA")
-    if data:
-        with open("cookies.txt", "w") as f:
-            f.write(data)
-        print("✅ Cookies loaded")
-    else:
-        print("⚠️ No cookies found")
-
-setup_cookies()
-
 # ================= STORAGE =================
 def load_json(file):
     try:
@@ -105,72 +93,56 @@ def get_all_latest_videos():
 
     return videos
 
-# ================= DOWNLOAD (🔥 FINAL HYBRID FIX) =================
+# ================= DOWNLOAD (🔥 FINAL ANDROID FIX) =================
 def download_video(url):
-    formats = ['bv*+ba/b', 'best', 'mp4']
+    try:
+        time.sleep(random.randint(15, 40))
 
-    for fmt in formats:
-        try:
-            time.sleep(random.randint(15, 40))
+        ydl_opts = {
+            'format': 'best',
 
-            ydl_opts = {
-                'format': fmt,
-                'outtmpl': 'video.%(ext)s',
+            'outtmpl': 'video.%(ext)s',
 
-                'quiet': True,
-                'noplaylist': True,
+            'quiet': True,
+            'noplaylist': True,
 
-                # ✅ COOKIES BACK
-                'cookiefile': 'cookies.txt',
+            # ✅ ANDROID ONLY (NO COOKIES)
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android']
+                }
+            },
 
-                # ✅ ANDROID + WEB HYBRID
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android', 'web']
-                    }
-                },
+            # 🔥 MOBILE USER AGENT
+            'http_headers': {
+                'User-Agent': 'com.google.android.youtube'
+            },
 
-                # 🔥 MOBILE USER AGENT (VERY IMPORTANT)
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Mobile)'
-                },
+            'merge_output_format': 'mp4'
+        }
 
-                'merge_output_format': 'mp4',
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            file_path = ydl.prepare_filename(info)
 
-                'sleep_interval': 10,
-                'max_sleep_interval': 30,
-            }
+        print("✅ Download success")
+        return file_path
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                file_path = ydl.prepare_filename(info)
+    except Exception as e:
+        error_text = str(e)
+        print("❌ Download failed:", error_text)
 
-            print(f"✅ Download success with {fmt}")
-            return file_path
+        if "Only images are available" in error_text:
+            return "SKIP"
 
-        except Exception as e:
-            error_text = str(e)
-            print(f"❌ Format {fmt} failed:", error_text)
+        if "live event will begin" in error_text:
+            return "SKIP"
 
-            if "Only images are available" in error_text:
-                print("📸 Image-only → skip")
-                return "SKIP"
+        if "429" in error_text:
+            print("⛔ Cooling 2 minutes")
+            time.sleep(120)
 
-            if "live event will begin" in error_text:
-                print("📡 Live video → skip")
-                return "SKIP"
-
-            if "Sign in to confirm" in error_text:
-                print("🔐 Need login → cookies should fix this")
-
-            if "429" in error_text:
-                print("⛔ Rate limited → cooling 2 minutes")
-                time.sleep(120)
-
-            continue
-
-    print("⏭ All formats failed → skip")
-    return None
+        return None
 
 # ================= QUEUE =================
 def add_to_queue(item):
