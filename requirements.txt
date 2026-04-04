@@ -1,5 +1,5 @@
 python-telegram-bot==20.7
 feedparser
-yt-dlp
+yt-dlp>=2025.01.01
 requests
 python-dotenv
