@@ -24,18 +24,6 @@ CHANNELS_FILE = "channels.json"
 
 last_post_date = None
 
-# ================= 🔐 COOKIE SETUP =================
-def setup_cookies():
-    data = os.getenv("COOKIE_DATA")
-    if data:
-        with open("cookies.txt", "w") as f:
-            f.write(data)
-        print("✅ Cookies loaded")
-    else:
-        print("⚠️ No cookies found")
-
-setup_cookies()
-
 # ================= STORAGE =================
 def load_json(file):
     try:
@@ -82,7 +70,6 @@ def get_all_latest_videos():
             for entry in feed.entries[:2]:
                 link = entry.link
 
-                # ✅ skip live / premiere
                 if any(x in link.lower() for x in ["live", "stream", "premiere"]):
                     continue
 
@@ -106,13 +93,12 @@ def get_all_latest_videos():
 
     return videos
 
-# ================= DOWNLOAD (🔥 FINAL FIX) =================
+# ================= DOWNLOAD (🔥 FINAL WORKING FIX) =================
 def download_video(url):
     formats = ['bv*+ba/b', 'best', 'mp4']
 
     for fmt in formats:
         try:
-            # ✅ stronger delay
             time.sleep(random.randint(15, 40))
 
             ydl_opts = {
@@ -122,23 +108,20 @@ def download_video(url):
                 'quiet': True,
                 'noplaylist': True,
 
-                'cookiefile': 'cookies.txt',
-
+                # ✅ ANDROID CLIENT (NO COOKIES)
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['web']
+                        'player_client': ['android']
                     }
                 },
 
-                'compat_opts': ['no-youtube-unavailable-videos'],
-
+                # 🔥 MOBILE HEADERS
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0'
+                    'User-Agent': 'com.google.android.youtube'
                 },
 
                 'merge_output_format': 'mp4',
 
-                # 🔥 extra anti-rate
                 'sleep_interval': 10,
                 'max_sleep_interval': 30,
             }
@@ -154,17 +137,14 @@ def download_video(url):
             error_text = str(e)
             print(f"❌ Format {fmt} failed:", error_text)
 
-            # ✅ skip image posts
             if "Only images are available" in error_text:
                 print("📸 Image-only → skip")
                 return "SKIP"
 
-            # ✅ skip live videos
             if "live event will begin" in error_text:
                 print("📡 Live video → skip")
                 return "SKIP"
 
-            # 🔥 handle 429
             if "429" in error_text:
                 print("⛔ Rate limited → cooling 2 minutes")
                 time.sleep(120)
@@ -242,7 +222,6 @@ async def worker(app: Application):
                     if retry_count < 2:
                         item["retry"] = retry_count + 1
                         print(f"🔁 Retry {item['retry']}")
-
                         await asyncio.sleep(60)
                         add_to_queue(item)
                     else:
@@ -251,7 +230,6 @@ async def worker(app: Application):
         except Exception as e:
             print("🔥 ERROR:", e)
 
-        # ✅ slower loop (less 429)
         await asyncio.sleep(300)
 
 # ================= COMMANDS =================
