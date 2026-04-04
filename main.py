@@ -24,6 +24,18 @@ CHANNELS_FILE = "channels.json"
 
 last_post_date = None
 
+# ================= 🍪 COOKIE SETUP =================
+def setup_cookies():
+    data = os.getenv("COOKIE_DATA")
+    if data:
+        with open("cookies.txt", "w") as f:
+            f.write(data)
+        print("✅ Cookies loaded")
+    else:
+        print("⚠️ No cookies found")
+
+setup_cookies()
+
 # ================= STORAGE =================
 def load_json(file):
     try:
@@ -93,7 +105,7 @@ def get_all_latest_videos():
 
     return videos
 
-# ================= DOWNLOAD (🔥 FINAL WORKING FIX) =================
+# ================= DOWNLOAD (🔥 FINAL HYBRID FIX) =================
 def download_video(url):
     formats = ['bv*+ba/b', 'best', 'mp4']
 
@@ -108,16 +120,19 @@ def download_video(url):
                 'quiet': True,
                 'noplaylist': True,
 
-                # ✅ ANDROID CLIENT (NO COOKIES)
+                # ✅ COOKIES BACK
+                'cookiefile': 'cookies.txt',
+
+                # ✅ ANDROID + WEB HYBRID
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android']
+                        'player_client': ['android', 'web']
                     }
                 },
 
-                # 🔥 MOBILE HEADERS
+                # 🔥 MOBILE USER AGENT (VERY IMPORTANT)
                 'http_headers': {
-                    'User-Agent': 'com.google.android.youtube'
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Mobile)'
                 },
 
                 'merge_output_format': 'mp4',
@@ -144,6 +159,9 @@ def download_video(url):
             if "live event will begin" in error_text:
                 print("📡 Live video → skip")
                 return "SKIP"
+
+            if "Sign in to confirm" in error_text:
+                print("🔐 Need login → cookies should fix this")
 
             if "429" in error_text:
                 print("⛔ Rate limited → cooling 2 minutes")
@@ -232,28 +250,6 @@ async def worker(app: Application):
 
         await asyncio.sleep(300)
 
-# ================= COMMANDS =================
-async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Use /add <channel link>")
-
-async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Use /remove <number>")
-
-async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channels = load_channels()
-    msg = "\n".join([f"{i+1}. {c}" for i, c in enumerate(channels)])
-    await update.message.reply_text(msg or "No channels")
-
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        f"Channels: {len(load_channels())}\nQueue: {len(load_json(QUEUE_FILE))}"
-    )
-
-async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    city = " ".join(context.args)
-    res = requests.get(f"https://wttr.in/{city}?format=3").text
-    await update.message.reply_text(res)
-
 # ================= START =================
 async def post_init(app):
     asyncio.create_task(worker(app))
@@ -261,14 +257,7 @@ async def post_init(app):
 def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
-    app.add_handler(CommandHandler("add", add))
-    app.add_handler(CommandHandler("remove", remove))
-    app.add_handler(CommandHandler("list", list_channels))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("weather", weather))
-
     print("🚀 Bot running...")
-
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
