@@ -105,17 +105,13 @@ def get_all_latest_videos():
 
     return videos
 
-# ================= DOWNLOAD (🔥 FULL FIX) =================
+# ================= DOWNLOAD (🔥 FINAL FIX) =================
 def download_video(url):
-    formats = [
-        'bv*+ba/b',
-        'best',
-        'mp4'
-    ]
+    formats = ['bv*+ba/b', 'best', 'mp4']
 
     for fmt in formats:
         try:
-            time.sleep(random.randint(5, 15))  # anti rate limit
+            time.sleep(random.randint(5, 15))
 
             ydl_opts = {
                 'format': fmt,
@@ -126,12 +122,15 @@ def download_video(url):
 
                 'cookiefile': 'cookies.txt',
 
-                # 🔥 IMPORTANT FIX
+                # ✅ FIX: ONLY WEB CLIENT (NO ANDROID)
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'web']
+                        'player_client': ['web']
                     }
                 },
+
+                # ✅ EXTRA STABILITY
+                'compat_opts': ['no-youtube-unavailable-videos'],
 
                 'http_headers': {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
@@ -151,9 +150,8 @@ def download_video(url):
             error_text = str(e)
             print(f"❌ Format {fmt} failed:", error_text)
 
-            # 🔥 HANDLE IMAGE POSTS
             if "Only images are available" in error_text:
-                print("📸 Image-only content → skip video")
+                print("📸 Image-only content → skip")
                 return "SKIP"
 
             continue
@@ -277,7 +275,8 @@ def main():
 
     print("🚀 Bot running...")
 
-    app.run_polling()
+    # ✅ FIX TELEGRAM CONFLICT
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
