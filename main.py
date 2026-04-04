@@ -82,7 +82,8 @@ def get_all_latest_videos():
             for entry in feed.entries[:2]:
                 link = entry.link
 
-                if any(x in link.lower() for x in ["live", "stream", "post"]):
+                # ✅ skip live / premiere
+                if any(x in link.lower() for x in ["live", "stream", "premiere"]):
                     continue
 
                 if "watch?v=" in link:
@@ -111,7 +112,8 @@ def download_video(url):
 
     for fmt in formats:
         try:
-            time.sleep(random.randint(5, 15))
+            # ✅ stronger delay
+            time.sleep(random.randint(15, 40))
 
             ydl_opts = {
                 'format': fmt,
@@ -122,21 +124,23 @@ def download_video(url):
 
                 'cookiefile': 'cookies.txt',
 
-                # ✅ FIX: ONLY WEB CLIENT (NO ANDROID)
                 'extractor_args': {
                     'youtube': {
                         'player_client': ['web']
                     }
                 },
 
-                # ✅ EXTRA STABILITY
                 'compat_opts': ['no-youtube-unavailable-videos'],
 
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                    'User-Agent': 'Mozilla/5.0'
                 },
 
-                'merge_output_format': 'mp4'
+                'merge_output_format': 'mp4',
+
+                # 🔥 extra anti-rate
+                'sleep_interval': 10,
+                'max_sleep_interval': 30,
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -150,9 +154,20 @@ def download_video(url):
             error_text = str(e)
             print(f"❌ Format {fmt} failed:", error_text)
 
+            # ✅ skip image posts
             if "Only images are available" in error_text:
-                print("📸 Image-only content → skip")
+                print("📸 Image-only → skip")
                 return "SKIP"
+
+            # ✅ skip live videos
+            if "live event will begin" in error_text:
+                print("📡 Live video → skip")
+                return "SKIP"
+
+            # 🔥 handle 429
+            if "429" in error_text:
+                print("⛔ Rate limited → cooling 2 minutes")
+                time.sleep(120)
 
             continue
 
@@ -203,7 +218,7 @@ async def worker(app: Application):
             item = get_next_from_queue()
 
             if item:
-                await asyncio.sleep(random.randint(5, 10))
+                await asyncio.sleep(random.randint(10, 20))
 
                 path = download_video(item["url"])
 
@@ -228,7 +243,7 @@ async def worker(app: Application):
                         item["retry"] = retry_count + 1
                         print(f"🔁 Retry {item['retry']}")
 
-                        await asyncio.sleep(30)
+                        await asyncio.sleep(60)
                         add_to_queue(item)
                     else:
                         print("❌ Skipped permanently")
@@ -236,7 +251,8 @@ async def worker(app: Application):
         except Exception as e:
             print("🔥 ERROR:", e)
 
-        await asyncio.sleep(240)
+        # ✅ slower loop (less 429)
+        await asyncio.sleep(300)
 
 # ================= COMMANDS =================
 async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -275,7 +291,6 @@ def main():
 
     print("🚀 Bot running...")
 
-    # ✅ FIX TELEGRAM CONFLICT
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
